@@ -125,6 +125,7 @@ function PhotoSphereViewer(options) {
 
   // local properties
   this.prop = {
+    isCubemap: undefined, // if the panorama is a cubemap
     latitude: 0, // current latitude of the center
     longitude: 0, // current longitude of the center
     anim_speed: 0, // parsed anim speed (rad/sec)

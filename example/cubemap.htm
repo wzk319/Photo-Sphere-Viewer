@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="../dist/photo-sphere-viewer.css">
+
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    #photosphere {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div id="photosphere"></div>
+
+<script src="../bower_components/three.js/three.min.js"></script>
+<script src="../bower_components/D.js/lib/D.min.js"></script>
+<script src="../bower_components/uevent/uevent.min.js"></script>
+<script src="../bower_components/doT/doT.min.js"></script>
+<script src="../bower_components/threejs-examples/examples/js/renderers/CanvasRenderer.js"></script>
+<script src="../bower_components/threejs-examples/examples/js/renderers/Projector.js"></script>
+<script src="../bower_components/threejs-examples/examples/js/controls/DeviceOrientationControls.js"></script>
+<script src="../dist/photo-sphere-viewer.js"></script>
+
+<script>
+  var PSV = new PhotoSphereViewer({
+    panorama: [
+      'suntemple-cubemap/1.jpg',
+      'suntemple-cubemap/2.jpg',
+      'suntemple-cubemap/3.jpg',
+      'suntemple-cubemap/4.jpg',
+      'suntemple-cubemap/5.jpg',
+      'suntemple-cubemap/6.jpg'
+    ],
+    container: 'photosphere',
+    loading_img: 'photosphere-logo.gif'
+  });
+</script>
+
+<script>
+  document.write('<script src="//' + location.host.split(':')[0] + ':35729/livereload.js" async defer><' + '/script>');
+</script>
+</body>
+</html>

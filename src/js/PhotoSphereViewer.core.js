@@ -86,93 +86,182 @@ PhotoSphereViewer.prototype._loadXMP = function() {
  * @private
  */
 PhotoSphereViewer.prototype._loadTexture = function() {
-  var self = this;
+  if (Array.isArray(this.config.panorama)) {
+    if (this.config.panorama.length !== 6) {
+      throw new PSVError('Must provide exactly 6 image paths when using cubemap.');
+    }
 
-  return this._loadXMP().then(function(pano_data) {
-    var defer = D();
-    var loader = new THREE.ImageLoader();
-    var progress = pano_data ? 100 : 0;
+    if (this.prop.isCubemap === false) {
+      throw new PSVError('The viewer was initialized with an equirectangular panorama, cannot switch to cubemap.');
+    }
 
-    loader.setCrossOrigin('anonymous');
+    this.prop.isCubemap = true;
 
-    var onload = function(img) {
-      if (self.loader) {
-        self.loader.setProgress(100);
+    return this._loadCubemapTexture();
+  }
+  else {
+    if (this.prop.isCubemap === true) {
+      throw new PSVError('The viewer was initialized with an cubemap, cannot switch to equirectangular panorama.');
+    }
+
+    this.prop.isCubemap = false;
+
+    return this._loadXMP()
+      .then(this._loadEquirectangularTexture.bind(this));
+  }
+};
+
+/**
+ * Load the six textures of the cube
+ * @returns {promise}
+ * @private
+ */
+PhotoSphereViewer.prototype._loadCubemapTexture = function() {
+  var defer = D();
+  var loader = new THREE.ImageLoader();
+  var progress = [0, 0, 0, 0, 0, 0];
+  var loaded = [];
+
+  loader.setCrossOrigin('anonymous');
+
+  var onend = function() {
+    loaded.forEach(function(img) {
+      img.needsUpdate = true;
+      img.minFilter = THREE.LinearFilter;
+      img.generateMipmaps = false;
+    });
+
+    defer.resolve(loaded);
+  };
+
+  var onload = function(i, img) {
+    progress[i] = 100;
+
+    if (this.loader) {
+      this.loader.setProgress(PSVUtils.sum(progress) / 6);
+    }
+
+    loaded[i] = new THREE.Texture(img);
+
+    if (loaded.length === 6) {
+      onend();
+    }
+  };
+
+  var onprogress = function(i, e) {
+    if (e.lengthComputable && this.loader) {
+      var new_progress = parseInt(e.loaded / e.total * 100);
+      if (new_progress > progress[i]) {
+        progress[i] = new_progress;
+        this.loader.setProgress(PSVUtils.sum(progress) / 6);
       }
+    }
+  };
 
-      // Config XMP data
-      if (!pano_data && self.config.pano_data) {
-        pano_data = PSVUtils.clone(self.config.pano_data);
+  var onerror = function(i, e) {
+    this.container.textContent = 'Cannot load image';
+    defer.reject(e);
+    throw new PSVError('Cannot load image ' + i);
+  };
+
+  for (var i = 0; i < 6; i++) {
+    loader.load(this.config.panorama[i], onload.bind(this, i), onprogress.bind(this, i), onerror.bind(this, i));
+  }
+
+  return defer.promise;
+};
+
+/**
+ * Loads the texture of the sphere
+ * @param pano_data (from loadXMP)
+ * @returns {promise}
+ * @private
+ */
+PhotoSphereViewer.prototype._loadEquirectangularTexture = function(pano_data) {
+  var defer = D();
+  var loader = new THREE.ImageLoader();
+  var progress = pano_data ? 100 : 0;
+
+  loader.setCrossOrigin('anonymous');
+
+  var onload = function(img) {
+    if (this.loader) {
+      this.loader.setProgress(100);
+    }
+
+    // Config XMP data
+    if (!pano_data && this.config.pano_data) {
+      pano_data = PSVUtils.clone(this.config.pano_data);
+    }
+
+    // Default XMP data
+    if (!pano_data) {
+      pano_data = {
+        full_width: img.width,
+        full_height: img.height,
+        cropped_width: img.width,
+        cropped_height: img.height,
+        cropped_x: 0,
+        cropped_y: 0
+      };
+    }
+
+    this.prop.pano_data = pano_data;
+
+    var r = Math.min(pano_data.full_width, PhotoSphereViewer.SYSTEM.maxTextureWidth) / pano_data.full_width;
+    var resized_pano_data = PSVUtils.clone(pano_data);
+
+    resized_pano_data.full_width *= r;
+    resized_pano_data.full_height *= r;
+    resized_pano_data.cropped_width *= r;
+    resized_pano_data.cropped_height *= r;
+    resized_pano_data.cropped_x *= r;
+    resized_pano_data.cropped_y *= r;
+
+    img.width = resized_pano_data.cropped_width;
+    img.height = resized_pano_data.cropped_height;
+
+    // create a new image containing the source image and black for cropped parts
+    var buffer = document.createElement('canvas');
+    buffer.width = resized_pano_data.full_width;
+    buffer.height = resized_pano_data.full_height;
+
+    var ctx = buffer.getContext('2d');
+    ctx.drawImage(img, resized_pano_data.cropped_x, resized_pano_data.cropped_y, resized_pano_data.cropped_width, resized_pano_data.cropped_height);
+
+    var texture = new THREE.Texture(buffer);
+    texture.needsUpdate = true;
+    texture.minFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+
+    defer.resolve(texture);
+  };
+
+  var onprogress = function(e) {
+    if (e.lengthComputable && this.loader) {
+      var new_progress = parseInt(e.loaded / e.total * 100);
+      if (new_progress > progress) {
+        progress = new_progress;
+        this.loader.setProgress(progress);
       }
+    }
+  };
 
-      // Default XMP data
-      if (!pano_data) {
-        pano_data = {
-          full_width: img.width,
-          full_height: img.height,
-          cropped_width: img.width,
-          cropped_height: img.height,
-          cropped_x: 0,
-          cropped_y: 0
-        };
-      }
+  var onerror = function(e) {
+    this.container.textContent = 'Cannot load image';
+    defer.reject(e);
+    throw new PSVError('Cannot load image');
+  };
 
-      self.prop.pano_data = pano_data;
+  loader.load(this.config.panorama, onload.bind(this), onprogress.bind(this), onerror.bind(this));
 
-      var r = Math.min(pano_data.full_width, PhotoSphereViewer.SYSTEM.maxTextureWidth) / pano_data.full_width;
-      var resized_pano_data = PSVUtils.clone(pano_data);
-
-      resized_pano_data.full_width *= r;
-      resized_pano_data.full_height *= r;
-      resized_pano_data.cropped_width *= r;
-      resized_pano_data.cropped_height *= r;
-      resized_pano_data.cropped_x *= r;
-      resized_pano_data.cropped_y *= r;
-
-      img.width = resized_pano_data.cropped_width;
-      img.height = resized_pano_data.cropped_height;
-
-      // create a new image containing the source image and black for cropped parts
-      var buffer = document.createElement('canvas');
-      buffer.width = resized_pano_data.full_width;
-      buffer.height = resized_pano_data.full_height;
-
-      var ctx = buffer.getContext('2d');
-      ctx.drawImage(img, resized_pano_data.cropped_x, resized_pano_data.cropped_y, resized_pano_data.cropped_width, resized_pano_data.cropped_height);
-
-      var texture = new THREE.Texture(buffer);
-      texture.needsUpdate = true;
-      texture.minFilter = THREE.LinearFilter;
-      texture.generateMipmaps = false;
-
-      defer.resolve(texture);
-    };
-
-    var onprogress = function(e) {
-      if (e.lengthComputable && self.loader) {
-        var new_progress = parseInt(e.loaded / e.total * 100);
-        if (new_progress > progress) {
-          progress = new_progress;
-          self.loader.setProgress(progress);
-        }
-      }
-    };
-
-    var onerror = function() {
-      self.container.textContent = 'Cannot load image';
-      throw new PSVError('Cannot load image');
-    };
-
-    loader.load(self.config.panorama, onload, onprogress, onerror);
-
-    return defer.promise;
-  });
+  return defer.promise;
 };
 
 /**
  * Applies the texture to the scene
  * Creates the scene if needed
- * @param {THREE.Texture} texture - The sphere texture
+ * @param {THREE.Texture} texture - The sphere or cube texture
  * @private
  */
 PhotoSphereViewer.prototype._setTexture = function(texture) {
@@ -180,11 +269,22 @@ PhotoSphereViewer.prototype._setTexture = function(texture) {
     this._createScene();
   }
 
-  if (this.mesh.material.map) {
-    this.mesh.material.map.dispose();
-  }
+  if (this.prop.isCubemap) {
+    for (var i = 0; i < 6; i++) {
+      if (this.mesh.material.materials[i].map) {
+        this.mesh.material.materials[i].map.dispose();
+      }
 
-  this.mesh.material.map = texture;
+      this.mesh.material.materials[i].map = texture[i];
+    }
+  }
+  else {
+    if (this.mesh.material.map) {
+      this.mesh.material.map.dispose();
+    }
+
+    this.mesh.material.map = texture;
+  }
 
   this.trigger('panorama-loaded');
 
@@ -213,15 +313,12 @@ PhotoSphereViewer.prototype._createScene = function() {
   this.scene = new THREE.Scene();
   this.scene.add(this.camera);
 
-  // The middle of the panorama is placed at longitude=0
-  var geometry = new THREE.SphereGeometry(PhotoSphereViewer.SPHERE_RADIUS, this.config.sphere_segments, this.config.sphere_segments, -PSVUtils.HalfPI);
-
-  var material = new THREE.MeshBasicMaterial();
-  material.side = THREE.DoubleSide;
-  material.overdraw = PhotoSphereViewer.SYSTEM.isWebGLSupported && this.config.webgl ? 0 : 0.5;
-
-  this.mesh = new THREE.Mesh(geometry, material);
-  this.mesh.scale.x = -1;
+  if (this.prop.isCubemap) {
+    this._createCubemap();
+  }
+  else {
+    this._createSphere();
+  }
 
   this.scene.add(this.mesh);
 
@@ -260,6 +357,47 @@ PhotoSphereViewer.prototype._createScene = function() {
     this.composer.addPass(this.passes.copy);
     this.composer.addPass(this.passes.blur);
   }
+};
+
+/**
+ * Creates the cube mesh
+ * @private
+ */
+PhotoSphereViewer.prototype._createCubemap = function() {
+  var geometry = new THREE.BoxGeometry(
+    PhotoSphereViewer.CUBE_LENGTH, PhotoSphereViewer.CUBE_LENGTH, PhotoSphereViewer.CUBE_LENGTH,
+    this.config.cube_segments, this.config.cube_segments, this.config.cube_segments
+  );
+
+  var materials = [];
+  for (var i = 0; i < 6; i++) {
+    var material = new THREE.MeshBasicMaterial();
+    material.overdraw = PhotoSphereViewer.SYSTEM.isWebGLSupported && this.config.webgl ? 0 : 1;
+    material.side = THREE.DoubleSide;
+    materials.push(material);
+  }
+
+  this.mesh = new THREE.Mesh(geometry, new THREE.MultiMaterial(materials));
+  this.mesh.position.x-= PhotoSphereViewer.SPHERE_RADIUS;
+  this.mesh.position.y-= PhotoSphereViewer.SPHERE_RADIUS;
+  this.mesh.position.z-= PhotoSphereViewer.SPHERE_RADIUS;
+  this.mesh.applyMatrix(new THREE.Matrix4().makeScale(1, 1, -1))
+};
+
+/**
+ * Creates the sphere mesh
+ * @private
+ */
+PhotoSphereViewer.prototype._createSphere = function() {
+  // The middle of the panorama is placed at longitude=0
+  var geometry = new THREE.SphereGeometry(PhotoSphereViewer.SPHERE_RADIUS, this.config.sphere_segments, this.config.sphere_segments, -PSVUtils.HalfPI);
+
+  var material = new THREE.MeshBasicMaterial();
+  material.side = THREE.DoubleSide;
+  material.overdraw = PhotoSphereViewer.SYSTEM.isWebGLSupported && this.config.webgl ? 0 : 0.5;
+
+  this.mesh = new THREE.Mesh(geometry, material);
+  this.mesh.scale.x = -1;
 };
 
 /**

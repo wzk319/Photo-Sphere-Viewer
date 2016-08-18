@@ -11,10 +11,16 @@ PhotoSphereViewer.MOVE_THRESHOLD = 4;
 PhotoSphereViewer.INERTIA_WINDOW = 300;
 
 /**
- * Radius of the THREE.Sphere
+ * Radius of the THREE.SphereGeometry
  * @type {int}
  */
 PhotoSphereViewer.SPHERE_RADIUS = 100;
+
+/**
+ * Length of the THREE.BoxGeometry
+ * @type {int}
+ */
+PhotoSphereViewer.CUBE_LENGTH = 200;
 
 /**
  * Map between keyboard events "keyCode|which" and "key"
@@ -65,6 +71,7 @@ PhotoSphereViewer.DEFAULTS = {
   pano_data: null,
   webgl: true,
   sphere_segments: 64,
+  cube_segments: 8,
   min_fov: 30,
   max_fov: 90,
   default_fov: null,
